@@ -99,14 +99,6 @@ DB$S_est <- as.numeric(DB$S_est)
 DB$Site <- as.factor(as.character(DB$Site))
 
 head(DB)
-# add equal sample size diversity estimates to the main data
-# Est05<- read.csv("C://Data/PhD/Processed_data/Dungbeetles/db_inext_Ests_EqSSq05.csv")
-# Est05 <- Est05[,2:3]
-# names(Est05) <- c("Est05_ss","Site")
-# DB <- merge(DB,Est05,by="Site")
-#Ests_EqSS <- read.csv("C://Data/PhD/Processed_data/Dungbeetles/db_inext_Ests_EqSS.csv")
-#DB <- merge(DB,Ests_EqSS,by="Site")
-#write.csv(DB,"C://Data/PhD/Processed_data/Dungbeetles/DB_div_allvars_EqSSests.csv")
 
 # 
 
@@ -118,19 +110,6 @@ head(DB)
 
 # Correlation tests ----
 #weather
-cor.test(DB$Temp19mean, DB$Temp19sd, method = "spearman",exact=F) 
-cor.test(DB$Temp19mean, DB$Temp_max, method = "spearman",exact=F)
-cor.test(DB$Temp19mean, DB$Temp_min, method = "spearman",exact=F) # all temperature variables are correlated - so just using mean
-
-cor.test(DB$Rain_mean,DB$Rain_max, method = "spearman",exact=F)
-cor.test(DB$Rain_mean,DB$Rain_sd, method = "spearman",exact=F) #rain all correlated, so using mean
-cor.test(DB$Rain_mean,DB$Rain_min, method = "spearman",exact=F) # rain min= 0 so, not useful
-
-cor.test(DB$Hum19mean,DB$Hum_max, method = "spearman",exact=F)
-cor.test(DB$Hum19mean,DB$Hum_min, method = "spearman",exact=F)
-cor.test(DB$Hum19mean,DB$Hum19sd, method = "spearman",exact=F)
-cor.test(DB$Hum19sd,DB$Hum_max, method = "spearman",exact=F) # humidity all correlated, so only using mean
-
 cor.test(DB$Hum19mean,DB$Temp19mean, method = "spearman",exact=F)
 cor.test(DB$Hum19mean,DB$Rain_mean, method = "spearman",exact=F)
 cor.test(DB$Rain_mean,DB$Temp19mean, method = "spearman",exact=F)
@@ -139,26 +118,22 @@ cor.test(DB$Rain_mean,DB$Temp19mean, method = "spearman",exact=F)
 cor.test(DB$Rank,DB$Road_dist, method = "spearman",exact=F)
 cor.test(DB$Rank,DB$River_dist, method = "spearman",exact=F)
 cor.test(DB$Rank,DB$Elevation, method = "spearman",exact=F)
-# Road and elevation are correlated with rank -  is this a problem?
+# Road and elevation are correlated with rank -  but road is a genuine indicator of distirbance intensity, 
+# and the elevational range is only ~200m, so very unlikely to influence the dung beetle community
 
-cor.test(DB$Rain_mean,DB$q0,method = "spearman",exact=F)
-cor.test(DB$Hum19mean,DB$q0,method = "spearman",exact=F)
-
-
-
-# ploting weatehr vars to see which is more likely to 
+# plotting weather vars to see which is more likely to 
 # be influential - only using one because highly correlated.
 plot(q0~Rain_mean,data=DB)
 plot(q0~Temp19mean,data=DB)
 plot(q0~Hum19mean,data=DB)
 
-# strongest correlation from rain
+# strongest correlation from rain so will use that to control for weather effects
 cor.test(DB$Rain_mean,DB$q0,method = "spearman",exact=F)
 cor.test(DB$Hum19mean,DB$q0,method = "spearman",exact=F)
 cor.test(DB$Temp19mean,DB$q0,method = "spearman",exact=F)
 
 
-# Moran's i test for spatial autocorrelation
+# Moran's i test for spatial autocorrelation ----
 morans <- function(model){
   resids <- model$residuals 
   resdf <- cbind.data.frame(DB$Site,resids,DB$UTM_Coords_S,DB$UTM_Coords_E)
@@ -166,9 +141,11 @@ morans <- function(model){
   DB.dists.inv <- 1/DB.dists # inverse dist matrix
   diag(DB.dists.inv) <- 0 # replace diagonal with 0s
   DB.dists.inv[1:5, 1:5] # view
-  as.data.frame(Moran.I(resdf$resids, DB.dists.inv))}
-
-## Checklist of variables to test:
+  df <- as.data.frame(Moran.I(resdf$resids, DB.dists.inv))
+  df$diffobsexp <- df$observed-df$expected
+  df}
+model <- m0
+## Checklist of variables to consider:
 # rain              - Rain_mean
 # temp              - Temp19mean
 # humidity          - Hum19mean
@@ -178,13 +155,14 @@ morans <- function(model){
 # rank              - Rank
 ####
 
-# lm(diversity~rank) ----
-## Paul recommended using spearman rank correlation test instead of glm
-# CORTEST FUNTION ----
+
+## using spearman rank correlation test instead of glm, because disturbance rank may not be perfectly linear 
+# (i.e. diff between 1 and 2 may be more than diff between 2 and 3, so rank correlation is better suited to this)
+# Correlation test function  ----
 #create correlation test function incl. nice output and bootstrap
 docor <- function(ia,ib){
-  res <- cor.test(ia, ib, method = "spearman",exact=F) 
-  ci <- quantile(
+  res <- cor.test(ia, ib, method = "spearman",exact=F) # used exact = F to supress warning about ties -  spearman calc uses ties corrected formula I believe. 
+  ci <- quantile( # bootstrap to est confidence interval, which helps control for data ties
     replicate(10000, {
       boot.i <- sample(length(ia), replace = TRUE)
       cor(ia[boot.i], ib[boot.i], method = "spearman")
@@ -195,77 +173,35 @@ docor <- function(ia,ib){
   print(cor)
 }
 docor(DB$Rank,DB$Est1_ss)
-# I plan to use the correlation test to shpw a relationship, and back up with glms to rule out effetc of other vars.
-# rank correlation (more general, so less likely to be the wrong model)
-res <-cor.test(DB$Rank, DB$q0, method = "spearman",exact=F) # used exact = F to supress warning about ties - this 
-cbind(res$statistic,res$p.value,res$estimate)
-# spearman calc uses ties corrected formula I believe.
+
+# Use the correlation test to check for a relationship between diversity and disturbance
+# rank correlation (more general, so less likely to affected by incorrect assumptions about the shape (linearity) of the disturbance rank variable)
+docor(DB$Rank, DB$q0) 
 # moderately strong correlation between shannon diversity and rank, statistically significant
-
-# bootstrapped 95% CI
-quantile(
-  replicate(10000, {
-    boot.i <- sample(length(DB$Rank), replace = TRUE)
-    cor(DB$Rank[boot.i], DB$q0[boot.i], method = "spearman")
-  }), 
-  c(0.025, 0.975))
-### q=0 ----
+# run a linear model just to be able to check for spatial autocorrelation----
 m0 <- lm(log(q0)~Rank,data=DB)
-logLik(m0)
-
-m1 <- lm(log(q0)~Rank+Elevation,data=DB) 
-anova(m0,m1) 
-logLik(m1) # for lm model is fitted using max likelihood (AIC), and default return of logLik is REML=F, so this is fine. For lmer, model default is fitted using REML, so need to specify this as F instead to get true max likelihood.
-
-m2 <- lm(log(q0)~Rank+River_dist,data=DB) 
-anova(m0,m2) #0.9502
-logLik(m2)
-
-m3 <- lm(log(q0)~Rank+Rain_mean,data=DB) 
-anova(m0,m3) # 0.6395
-
-rbind(logLik(m0),logLik(m1),logLik(m2),logLik(m3))
 summary(m0)
 morans(m0)
 
-####
+respnames <- c("DB$q0","DB$q1","DB$q2","DB$qInf")
+resps <- list(DB$q0,DB$q1,DB$q2,DB$qInf)
+corresults <- as.data.frame(cbind("Response"=respnames,"S"=numeric(length(resps)),"p"=numeric(length(resps)),"rho"=numeric(length(resps)),"LCI"=numeric(length(resps)),"UCI"=numeric(length(resps))))
+morresults <-  as.data.frame(cbind("Response"=respnames,"Obs"=numeric(length(resps)),"Exp"=numeric(length(resps)),"sd"=numeric(length(resps)),"p"=numeric(length(resps)),"Obs-Exp"=numeric(length(resps))))
 
-####
-####
+  r <- 1
+for(r in 1:length(resps)){
+  response <- c(resps[[r]])
+  cr <- docor(DB$Rank, response) 
+  corresults[r,] <- cbind("response"=respnames[r],cr)
+  m0 <- lm(log(response)~DB$Rank)
+  mr <- as.data.frame(morans(m0)) 
+  morresults[r,] <- cbind("response"=respnames[r],mr)
+  }
 
 ### q=1 ----
-res <- cor.test(DB$Rank, DB$q1, method = "spearman",exact=F) 
-cbind(res$statistic,res$p.value,res$estimate)
-
-# bootstrapped 95% CI
-quantile(
-  replicate(10000, {
-    boot.i <- sample(length(DB$Rank), replace = TRUE)
-    cor(DB$Rank[boot.i], DB$q1[boot.i], method = "spearman")
-  }), 
-  c(0.025, 0.975))
-
-
-
+docor(DB$Rank, DB$q1) 
 m0 <- lm(log(q1)~Rank,data=DB)
 logLik(m0)
-summary(m0)
-
-m1 <- lm(log(q1)~Rank+Elevation,data=DB) 
-anova(m0,m1) #0.8111
-logLik(m1) # for lm model is fitted using max likelihood (AIC), and default return of logLik is REML=F, so this is fine. For lmer, model default is fitted using REML, so need to specify this as F instead to get true max likelihood.
-
-m2 <- lm(log(q1)~Rank+River_dist,data=DB) 
-anova(m0,m2) #0.09172
-logLik(m2)
-
-m3 <- lm(log(q1)~Rank+Rain_mean,data=DB) 
-anova(m0,m3) # 0.2766
-logLik(m3)
-
-
-### best:
-rbind(logLik(m0),logLik(m1),logLik(m2),logLik(m3))
 summary(m0)
 morans(m0)
 

@@ -3,7 +3,7 @@
 
 rm(list=ls())
 
-# libraries ---
+# libraries ----
 library(ape) # for moran's i 
  require(dplyr)
  library(tidyr)
@@ -75,9 +75,9 @@ head(DB_allvars)
 write.csv(DB_allvars,"C://Data/PhD/Processed_data/Dungbeetles/DB_div_allvars.csv")
 
 
-####
-####
-
+####//////////////////
+## Analysis of biodiversity patterns ----
+#///////////////////////
 # Read in Data ----
 
 DB <- read.csv("C://Data/PhD/Processed_data/Dungbeetles/DB_div_allvars_EqSSests.csv")
@@ -170,7 +170,7 @@ docor <- function(ia,ib){
     c(0.025, 0.975))
   cor <- cbind(res$statistic,res$p.value,res$estimate,ci[1],ci[2])
   colnames(cor) <- c("S","p","rho","LCI","UCI")
-  print(cor)
+  return(cor)
 }
 docor(DB$Rank,DB$Est1_ss)
 
@@ -183,20 +183,33 @@ m0 <- lm(log(q0)~Rank,data=DB)
 summary(m0)
 morans(m0)
 
-respnames <- c("DB$q0","DB$q1","DB$q2","DB$qInf")
-resps <- list(DB$q0,DB$q1,DB$q2,DB$qInf)
+respnames <- c("Observed q0","Observed q1","Observed q2","Observed qInf","Estimated q0","Estimated q1","Estimated q2","Total Abundance","Vegetation structure PC1")
+resps <- list(DB$q0,DB$q1,DB$q2,DB$qInf,DB$e95q0,DB$e95q1,DB$e95q2,DB$Abund_total,DB$veg_pc1)
 corresults <- as.data.frame(cbind("Response"=respnames,"S"=numeric(length(resps)),"p"=numeric(length(resps)),"rho"=numeric(length(resps)),"LCI"=numeric(length(resps)),"UCI"=numeric(length(resps))))
-morresults <-  as.data.frame(cbind("Response"=respnames,"Obs"=numeric(length(resps)),"Exp"=numeric(length(resps)),"sd"=numeric(length(resps)),"p"=numeric(length(resps)),"Obs-Exp"=numeric(length(resps))))
+morresults <- as.data.frame(cbind("Response"=respnames,"Obs"=numeric(length(resps)),"Exp"=numeric(length(resps)),"sd"=numeric(length(resps)),"p"=numeric(length(resps)),"Obs-Exp"=numeric(length(resps))))
+for(c in 2:6){ ## convert columns to numeric
+corresults[,c] <- as.numeric(as.character((corresults[,c])))
+morresults[,c] <- as.numeric(as.character((morresults[,c])))
+}
+str(morresults)
 
-  r <- 1
-for(r in 1:length(resps)){
+r <- 9
+for(r in 1:length(respnames)){
   response <- c(resps[[r]])
   cr <- docor(DB$Rank, response) 
   corresults[r,] <- cbind("response"=respnames[r],cr)
+  if(r<9){
   m0 <- lm(log(response)~DB$Rank)
-  mr <- as.data.frame(morans(m0)) 
-  morresults[r,] <- cbind("response"=respnames[r],mr)
+  mr <- morans(m0) 
+  morresults[r,] <- cbind("response"=respnames[r],mr)}
+  else{
+    m0 <- lm(response~DB$Rank)
+    mr <- morans(m0) 
+    morresults[r,] <- cbind("response"=respnames[r],mr)}
   }
+#write.csv(morresults,"C://Data/PhD/Outputs/Dungbeetles/moransi_240419.csv")
+#write.csv(corresults,"C://Data/PhD/Outputs/Dungbeetles/diversitycorrelations_240419.csv")
+
 
 ### q=1 ----
 docor(DB$Rank, DB$q1) 

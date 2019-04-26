@@ -10,6 +10,8 @@ morans <- function(model){
   df$diffobsexp <- df$observed-df$expected
   df}
 
+# Correlation test function  ----
+#create correlation test function incl. nice output and bootstrap
 docor <- function(ia,ib){
   res <- cor.test(ia, ib, method = "spearman",exact=F) # used exact = F to supress warning about ties -  spearman calc uses ties corrected formula I believe. 
   ci <- quantile( # bootstrap to est confidence interval, which helps control for data ties
@@ -22,3 +24,4 @@ docor <- function(ia,ib){
   colnames(cor) <- c("S","p","rho","LCI","UCI")
   return(cor)
 }
+

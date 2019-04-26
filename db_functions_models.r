@@ -6,11 +6,15 @@ rm(list=ls())
 
 # Load packages ----
 
-require(dplyr)
+library(dplyr)
 library(tidyr)
 library(stringr)
-require(lme4)
-require(lmerTest)
+library(lme4)
+library(lmerTest)
+library(ape)
+
+## source functions ----
+source("C://Data/PhD/Analysis/Dungbeetles/correlation_morans_functions.r")
 
 ## CREATE DATAFRAME ----
 #  
@@ -123,7 +127,7 @@ plot(Allbeads_disp~Rank,data=DBfun)
 ## Functions to test (response vars):
 # dung removal
 # excavated soil
-# S,M,L beads dispersed (count)
+# S,M,L beads dispersed (proportion)
 # S,M,L bead dispersal distance
 
 ##  Explanatory vars:
@@ -143,6 +147,33 @@ cor.test(DBfun$Dung_removed, DBfun$Rain_mean, method = "spearman",exact=F)
 cor.test(DBfun$Dung_removed, DBfun$Hum07mean, method = "spearman",exact=F) 
 # rain strongest effect
 
+respnames <- c("Observed q0","Observed q1","Observed q2","Observed qInf","Estimated q0","Estimated q1","Estimated q2","Total Abundance","Vegetation structure PC1")
+resps <- list(DB$q0,DB$q1,DB$q2,DB$qInf,DB$e95q0,DB$e95q1,DB$e95q2,DB$Abund_total,DB$veg_pc1)
+corresults <- as.data.frame(cbind("Response"=respnames,"S"=numeric(length(resps)),"p"=numeric(length(resps)),"rho"=numeric(length(resps)),"LCI"=numeric(length(resps)),"UCI"=numeric(length(resps))))
+morresults <- as.data.frame(cbind("Response"=respnames,"Obs"=numeric(length(resps)),"Exp"=numeric(length(resps)),"sd"=numeric(length(resps)),"p"=numeric(length(resps)),"Obs-Exp"=numeric(length(resps))))
+for(c in 2:6){ ## convert columns to numeric
+  corresults[,c] <- as.numeric(as.character((corresults[,c])))
+  morresults[,c] <- as.numeric(as.character((morresults[,c])))
+}
+str(morresults)
+
+r <- 9
+for(r in 1:length(respnames)){
+  response <- c(resps[[r]])
+  cr <- docor(DB$Rank, response) 
+  corresults[r,] <- cbind("response"=respnames[r],cr)
+  if(r<9){
+    m0 <- lm(log(response)~DB$Rank)
+    mr <- morans(m0) 
+    morresults[r,] <- cbind("response"=respnames[r],mr)}
+  else{
+    m0 <- lm(response~DB$Rank)
+    mr <- morans(m0) 
+    morresults[r,] <- cbind("response"=respnames[r],mr)}
+}
+#write.csv(morresults,"C://Data/PhD/Outputs/Dungbeetles/moransi_240419.csv")
+#write.csv(corresults,"C://Data/PhD/Outputs/Dungbeetles/diversitycorrelations_240419.csv")
+
 ### Correlation test
 cor.test(DBfun$Rank, DBfun$Dung_removed, method = "spearman",exact=F) 
 
@@ -156,58 +187,6 @@ quantile(
 
 ### No relationship between dung removal and rank, so no reason to run mixed models
 
-## Soil excavation  ----
-
-# Test which of weather variables are most influential 
-cor.test(DBfun$Excavated_soil_weight, DBfun$Temp07mean, method = "spearman",exact=F) 
-cor.test(DBfun$Excavated_soil_weight, DBfun$Rain_mean, method = "spearman",exact=F) 
-cor.test(DBfun$Excavated_soil_weight, DBfun$Hum07mean, method = "spearman",exact=F) 
-# rain strongest effect
-
-### Correlation test
-cor.test(DBfun$Rank, DBfun$Excavated_soil_weight, method = "spearman",exact=F) 
-
-# bootstrapped 95% CI
-quantile(
-  replicate(10000, {
-    boot.i <- sample(length(DBfun$Rank), replace = TRUE)
-    cor(DBfun$Rank[boot.i], DBfun$Excavated_soil_weight[boot.i], method = "spearman")
-  }), 
-  c(0.025, 0.975))
-# no relationship between rank and soil excavation
-
-## Bead dispersal ALL SIZES  - proportion dispersed ----
-
-### Correlation test
-cor.test(DBfun$Rank, DBfun$Allbeads_disp, method = "spearman",exact=F) 
-
-# bootstrapped 95% CI
-quantile(
-  replicate(10000, {
-    boot.i <- sample(length(DBfun$Rank), replace = TRUE)
-    cor(DBfun$Rank[boot.i], DBfun$Allbeads_disp[boot.i], method = "spearman")
-  }), 
-  c(0.025, 0.975))
-
-
-## Bead dispersal - proportion dispersed (Small)  ----
-
-### Correlation test
-cor.test(DBfun$Rank, DBfun$Small_dispersed, method = "spearman",exact=F) 
-
-# bootstrapped 95% CI
-quantile(
-  replicate(10000, {
-    boot.i <- sample(length(DBfun$Rank), replace = TRUE)
-    cor(DBfun$Rank[boot.i], DBfun$Small_dispersed[boot.i], method = "spearman")
-  }), 
-  c(0.025, 0.975))
-
-# Test which of weather variables are most influential 
-cor.test(DBfun$Small_dispersed, DBfun$Temp07mean, method = "spearman",exact=F) 
-cor.test(DBfun$Small_dispersed, DBfun$Rain_mean, method = "spearman",exact=F) 
-cor.test(DBfun$Small_dispersed, DBfun$Hum07mean, method = "spearman",exact=F) 
-# rain strongest effect
 
 smallprop <- cbind(DBfun$Small_dispersed,DBfun$Small_count_remain)
 m0 <- glmer(smallprop~Rank+(1|Site/Arena)+(1|Date_checked), binomial,data=DBfun)

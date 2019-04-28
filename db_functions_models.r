@@ -112,6 +112,12 @@ plot(mean_dispersal_Large~Rank,data=DBfun,col="forestgreen",pch=19)
 plot(mean_dispersal_Medium~Rank,data=DBfun,col="forestgreen",pch=19)
 plot(mean_dispersal_Medium~q1,data=DBfun)
 
+summary(DBfun)
+r <- which(DBfun$Medium_count_remain==22)
+DBfun$Medium_count_remain[r] <- 20
+## medium remaining = 22, not possible - based on no of small and large remaining (almost all), this is likely to be a typo and should be 20.
+
+
 # convert variables to more meaningful ones
 # Dung_end_weight - amount of dung removed
 Dung_removed <- c(100-DBfun$Dung_end_weight) # this is now a continuous normal variable
@@ -119,7 +125,8 @@ Small_dispersed <- c(50-DBfun$Small_count_remain)
 Medium_dispersed <- c(20-DBfun$Medium_count_remain)
 Large_dispersed <- c(10-DBfun$Large_count_remain)
 Allbeads_disp <- Small_dispersed+Medium_dispersed+Large_dispersed
-DBfun <- cbind(DBfun,Dung_removed,Small_dispersed,Medium_dispersed,Large_dispersed,Allbeads_disp)
+Allbeads_remain <- DBfun$Small_count_remain+DBfun$Medium_count_remain+DBfun$Large_count_remain
+DBfun <- cbind(DBfun,Dung_removed,Small_dispersed,Medium_dispersed,Large_dispersed,Allbeads_disp,Allbeads_remain)
 plot(Allbeads_disp~Rank,data=DBfun)
 
 
@@ -132,11 +139,7 @@ plot(Allbeads_disp~Rank,data=DBfun)
 
 ##  Explanatory vars:
 # Rank
-# Weather
-# Elevation
-# Road_dist
-# River_dist
-# Random effects: (1|Arena/Site) + (1|Date)
+# Random effects: (1|Arena) 
 # diversity (q0,q1,q2) (instead of rank - separate models)
 
 ## Dung removal ----
@@ -174,63 +177,71 @@ for(r in 1:length(respnames)){
 #write.csv(morresults,"C://Data/PhD/Outputs/Dungbeetles/moransi_240419.csv")
 #write.csv(corresults,"C://Data/PhD/Outputs/Dungbeetles/diversitycorrelations_240419.csv")
 
-### Correlation test
-cor.test(DBfun$Rank, DBfun$Dung_removed, method = "spearman",exact=F) 
+#bionomial response variables for seed dispersal
+smallbin <- cbind(DBfun$Small_dispersed,DBfun$Small_count_remain)
+medbin <- cbind(DBfun$Medium_dispersed, DBfun$Medium_count_remain)
+largebin <- cbind(DBfun$Large_dispersed,DBfun$Large_count_remain)
+allbin<- cbind(DBfun$Allbeads_disp,DBfun$Allbeads_remain)
 
-# bootstrapped 95% CI
-quantile(
-  replicate(10000, {
-    boot.i <- sample(length(DBfun$Rank), replace = TRUE)
-    cor(DBfun$Rank[boot.i], DBfun$Dung_removed[boot.i], method = "spearman")
-  }), 
-  c(0.025, 0.975))
+## mixed effect models to control for the experiments being re-run in the sites
+m0 <- glmer(smallbin~Rank+(1|Site), binomial,data=DBfun)
+smallsum <- summary(m0) 
+plot(m0) ## generally linear spread of residuals - some skewdness at higher values
+smallsum$coefficients # gets results out
 
-### No relationship between dung removal and rank, so no reason to run mixed models
+#check for overdispersion 
+overdisp_fun(m0) # possible overdispersion
 
-
-smallprop <- cbind(DBfun$Small_dispersed,DBfun$Small_count_remain)
-m0 <- glmer(smallprop~Rank+(1|Site/Arena)+(1|Date_checked), binomial,data=DBfun)
-summary(m0) #dev=848, df=67
-logLik(m0)
-
-#To model over-dispersion you can try fitting an observation-level random effect.
-# and fitting (1|observ) in the model formula - recc by jarrod hadfield from https://stat.ethz.ch/pipermail/r-sig-mixed-models/2010q4/004731.html
-DBfun$observ<-as.factor(1:dim(DBfun)[1])
-m1 <- glmer(smallprop~Rank+(1|Site/Arena)+(1|Date_checked)+(1|observ), binomial,data=DBfun)
+#USed an observation-level random effect to correct for overdispersion in the model - recc by jarrod hadfield from https://stat.ethz.ch/pipermail/r-sig-mixed-models/2010q4/004731.html
+DBfun$observ<-as.factor(1:dim(DBfun)[1]) ## observation level mixed effect
+m1 <- glmer(smallbin~Rank+(1|Site)+(1|observ), binomial,data=DBfun)
 summary(m1) 
-logLik(m1)
+overdisp_fun(m1) # observation level random effect seems to have corrected for overdispersion?
+plot(m1) # this model has worse pattern of residuals, so sticking with m0
 
-m2 <- glmer(smallprop~Rank+Elevation+(1|Site/Arena)+(1|Date_checked)+(1|observ), binomial, data=DBfun)
-summary(m2)
-# scales too different -  but rescaling didn't help, model failed to converge.
+## run models for other beads
+m2 <- glmer(medbin~Rank+(1|Site), binomial,data=DBfun)
+medsum <- summary(m2)
+plot(m2) 
+medsum$coefficients # gets results out
 
-m3 <- glmer(smallprop~Rank+scale(Elevation)+(1|Site/Arena)+(1|Date_checked)+(1|observ), binomial, data=DBfun)
-summary(m3)
+m3 <- glmer(largebin~Rank+(1|Site), binomial,data=DBfun)
+largesum <- summary(m3) 
+plot(m3) 
+largesum$coefficients # gets results out
 
-m4 <- glmer(smallprop~Rank+River_dist+(1|Site/Arena)+(1|Date_checked)+(1|observ), binomial, data=DBfun)
-summary(m4)
+m4 <- glmer(allbin~Rank+(1|Site), binomial,data=DBfun)
+allsum <- summary(m4) 
+plot(m4) 
+allsum$coefficients # gets results out
+plot(fitted.values(m4)~DBfun$Rank)
+plot(allbin[,1]~DBfun$Rank)
 
+#response variables for seed dispersal as proportions
+smallprop <- DBfun$Small_dispersed/50
+medprop <-DBfun$Medium_dispersed/20
+largeprop<- DBfun$Large_dispersed/10
+allprop<- DBfun$Allbeads_disp/80
 
+m5 <- lmer(log(smallprop)~Rank+(1|Site),data=DBfun)
+plot(m5)
+summary(m5)
 
-### test for overdispersion http://bbolker.github.io/mixedmodels-misc/glmmFAQ.html#testing-for-overdispersioncomputing-overdispersion-factor
-overdisp_fun <- function(model) {
-  ## number of variance parameters in 
-  ##   an n-by-n variance-covariance matrix
-  vpars <- function(m) {
-    nrow(m)*(nrow(m)+1)/2
-  }
-  model.df <- sum(sapply(VarCorr(model),vpars))+length(fixef(model))
-  rdf <- nrow(model.frame(model))-model.df
-  rp <- residuals(model,type="pearson")
-  Pearson.chisq <- sum(rp^2)
-  prat <- Pearson.chisq/rdf
-  pval <- pchisq(Pearson.chisq, df=rdf, lower.tail=FALSE)
-  c(chisq=Pearson.chisq,ratio=prat,rdf=rdf,p=pval)
-}
-overdisp_fun(m0)
-overdisp_fun(m1) # observation level random effect seems to have corrected for overdispersion.
+m5 <- lmer(log(allprop)~Rank+(1|Site),data=DBfun)
+plot(m5)
+summary(m5)
 
+m5 <- lmer(log(smallprop)~Rank+(1|Site),data=DBfun)
+plot(m5)
+summary(m5)
 
+m5 <- lmer(log(smallprop)~Rank+(1|Site),data=DBfun)
+plot(m5)
+summary(m5)
+
+m6 <- glmer(Small_dispersed~Rank+(1|Site), poisson, data=DBfun)
+plot(m6)
+plot(fitted.values(m6)~DBfun$Rank)
 
 ## Bead dispersal - proportion dispersed (Medium)  ----
 
